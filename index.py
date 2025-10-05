@@ -56,6 +56,7 @@ def compute_metrics(records: List[Dict[str, Any]], threshold_ms: float) -> Dict[
     return out
 
 
+@app.post("/latency")
 @app.post("/")
 async def latency_endpoint(payload: Dict[str, Any]):
     regions = payload.get("regions")
