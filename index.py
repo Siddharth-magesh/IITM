@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any
@@ -16,6 +17,30 @@ app.add_middleware(
 	allow_methods=["POST", "OPTIONS"],
 	allow_headers=["*"],
 )
+
+
+# Ensure the Access-Control-Allow-* headers are present on every response. Some
+# deployment environments (or intermediate proxies) may strip or alter CORS
+# responses; adding them explicitly on every response guarantees the header is
+# present for both simple requests and preflight (OPTIONS) requests.
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+	# If the incoming request is an OPTIONS preflight, quickly return the headers
+	if request.method == "OPTIONS":
+		headers = {
+			"Access-Control-Allow-Origin": "*",
+			"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+			"Access-Control-Allow-Headers": "Content-Type, Authorization",
+		}
+		return Response(status_code=200, headers=headers)
+
+	response = await call_next(request)
+	response.headers["Access-Control-Allow-Origin"] = "*"
+	# Also expose allowed methods and headers to be explicit
+	response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+	response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+	return response
+
 
 
 class Query(BaseModel):
