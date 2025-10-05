@@ -98,7 +98,9 @@ async def latency_endpoint(payload: Dict[str, Any], request: Request):
 		else:
 			result[region] = {'avg_latency': None, 'p95_latency': None, 'avg_uptime': None, 'breaches': 0}
 
-	return result
+	response = {"regions": result}
+	logger.info(f"Responding with regions payload keys={list(result.keys())}")
+	return response
 
 if __name__ == '__main__':
     import uvicorn
