@@ -1,14 +1,21 @@
-from flask import Flask, request, jsonify, make_response
-from flask_cors import CORS
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
+from typing import List, Dict, Any
 from pathlib import Path
 import json
 import logging
-from typing import List, Dict, Any
 
 
-app = Flask(__name__)
-CORS(app, resources={r"/latency": {"origins": "*"}})
+app = FastAPI()
+
+app.add_middleware(
+	CORSMiddleware,
+	allow_origins=["*"],
+	allow_methods=["*"],
+	allow_headers=["*"],
+	expose_headers=["*"]
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("iitm-latency")
@@ -44,33 +51,22 @@ def compute_metrics(records: List[Dict[str, Any]], threshold_ms: float):
 			'avg_uptime': round(avg_uptime, 6),
 			'breaches': breaches,
 		}
-		logger.info(f"Computed for region={region}: avg_latency={out[region]['avg_latency']} p95={out[region]['p95_latency']} avg_uptime={out[region]['avg_uptime']} breaches={out[region]['breaches']}")
+		logger.info(f"Computed for region={region}: {out[region]}")
 	return out
 
 
-@app.route('/', methods=['GET'])
+@app.get('/')
 def read_root():
-	return jsonify({'message': 'Hello, World!'})
+	return {"message": "Hello, World!"}
 
 
-@app.route('/latency', methods=['POST', 'OPTIONS'])
-def latency_endpoint():
-	if request.method == 'OPTIONS':
-		resp = make_response('', 200)
-		resp.headers['Access-Control-Allow-Origin'] = '*'
-		resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-		resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-		return resp
+@app.post('/latency')
+async def latency_endpoint(payload: Dict[str, Any], request: Request):
+	regions = payload.get('regions')
+	threshold_ms = payload.get('threshold_ms')
+	records = payload.get('records')
 
-	data = request.get_json(silent=True) or {}
-	regions = data.get('regions')
-	threshold_ms = data.get('threshold_ms')
-	records = data.get('records')
-
-	print('[latency_endpoint] Received request:')
-	print('  regions:', regions)
-	print('  threshold_ms:', threshold_ms)
-	print('  records_included_in_request:', bool(records))
+	logger.info(f"Received payload regions={regions} threshold_ms={threshold_ms} records_included={bool(records)}")
 
 	if records is None:
 		sample = Path(__file__).resolve().parent / 'workspace' / 'telemetry.json'
@@ -89,17 +85,10 @@ def latency_endpoint():
 				{'region': 'amer', 'latency_ms': 180, 'uptime': 0.998},
 				{'region': 'amer', 'latency_ms': 300, 'uptime': 0.99},
 			]
-			print(f"[latency_endpoint] No records provided; using embedded sample records (count={len(records)})")
-
-	try:
-		print(f"[latency_endpoint] Using records count={len(records)}")
-		preview = records[:5]
-		print(f"[latency_endpoint] Records preview: {preview}")
-	except Exception as e:
-		print('[latency_endpoint] Could not print records preview:', e)
+			logger.info(f"Using embedded sample records (count={len(records)})")
 
 	if not regions or threshold_ms is None:
-		return jsonify({'error': 'Missing required fields: regions and threshold_ms'}), 400
+		raise HTTPException(status_code=400, detail='Missing required fields: regions and threshold_ms')
 
 	metrics = compute_metrics(records, float(threshold_ms))
 	result = {}
@@ -109,11 +98,8 @@ def latency_endpoint():
 		else:
 			result[region] = {'avg_latency': None, 'p95_latency': None, 'avg_uptime': None, 'breaches': 0}
 
-	resp = jsonify(result)
-	resp.headers['Access-Control-Allow-Origin'] = '*'
-	return resp
-
+	return result
 
 if __name__ == '__main__':
-	app.run(host='0.0.0.0', port=8000, debug=True)
-
+    import uvicorn
+    uvicorn.run(app, host='0.0.0.0', port=8000)
