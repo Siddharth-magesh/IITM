@@ -1,107 +1,76 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import numpy as np
-from typing import List, Dict, Any
 from pathlib import Path
+from typing import Dict, Any, List
+import numpy as np
 import json
-import logging
-
 
 app = FastAPI()
-
-app.add_middleware(
-	CORSMiddleware,
-	allow_origins=["*"],
-	allow_methods=["*"],
-	allow_headers=["*"],
-	expose_headers=["*"]
-)
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("iitm-latency")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],expose_headers=["*"])
 
 
-def compute_metrics(records: List[Dict[str, Any]], threshold_ms: float):
-	by_region = {}
-	for r in records:
-		region = r.get('region')
-		if region is None:
-			continue
-		latency = r.get('latency_ms')
-		uptime = r.get('uptime')
-		if latency is None or uptime is None:
-			continue
-		by_region.setdefault(region, {'latencies': [], 'uptimes': []})
-		by_region[region]['latencies'].append(float(latency))
-		by_region[region]['uptimes'].append(float(uptime))
-
-	out = {}
-	for region, data in by_region.items():
-		lats = np.array(data['latencies'], dtype=float)
-		ups = np.array(data['uptimes'], dtype=float)
-		if lats.size == 0:
-			continue
-		avg_latency = float(np.mean(lats))
-		p95_latency = float(np.percentile(lats, 95))
-		avg_uptime = float(np.mean(ups))
-		breaches = int(np.sum(lats > threshold_ms))
-		out[region] = {
-			'avg_latency': round(avg_latency, 3),
-			'p95_latency': round(p95_latency, 3),
-			'avg_uptime': round(avg_uptime, 6),
-			'breaches': breaches,
-		}
-		logger.info(f"Computed for region={region}: {out[region]}")
-	return out
+def load_bundle() -> List[Dict[str, Any]]:
+    # use the file's directory (repo root) so the JSON bundle placed next to this file is found
+    root = Path(__file__).resolve().parent
+    p = root / "q-vercel-latency.json"
+    if p.exists():
+        with open(p, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
 
 
-@app.get('/')
-def read_root():
-	return {"message": "Hello, World!"}
+def compute_metrics(records: List[Dict[str, Any]], threshold_ms: float) -> Dict[str, Dict[str, Any]]:
+    by_region = {}
+    for r in records:
+        reg = r.get("region")
+        if not reg:
+            continue
+        lat = r.get("latency_ms", r.get("latency"))
+        if lat is None:
+            continue
+        if r.get("uptime") is not None:
+            up = r.get("uptime")
+        elif r.get("uptime_pct") is not None:
+            try:
+                up = float(r.get("uptime_pct")) / 100.0
+            except Exception:
+                continue
+        else:
+            continue
+        by_region.setdefault(reg, {"latencies": [], "uptimes": []})
+        by_region[reg]["latencies"].append(float(lat))
+        by_region[reg]["uptimes"].append(float(up))
+
+    out = {}
+    for reg, d in by_region.items():
+        l = np.array(d["latencies"], dtype=float)
+        u = np.array(d["uptimes"], dtype=float)
+        if l.size == 0:
+            continue
+        out[reg] = {
+            "avg_latency": round(float(np.mean(l)), 2),
+            "p95_latency": round(float(np.percentile(l, 95)), 2),
+            "avg_uptime": round(float(np.mean(u)), 6),
+            "breaches": int((l > threshold_ms).sum()),
+        }
+    return out
 
 
-@app.post('/latency')
-async def latency_endpoint(payload: Dict[str, Any], request: Request):
-	regions = payload.get('regions')
-	threshold_ms = payload.get('threshold_ms')
-	records = payload.get('records')
+@app.post("/")
+async def latency_endpoint(payload: Dict[str, Any]):
+    regions = payload.get("regions")
+    threshold_ms = payload.get("threshold_ms")
+    if not regions or threshold_ms is None:
+        raise HTTPException(status_code=400, detail="Missing required fields: regions and threshold_ms")
 
-	logger.info(f"Received payload regions={regions} threshold_ms={threshold_ms} records_included={bool(records)}")
+    records = payload.get("records")
+    if records is None:
+        records = load_bundle()
 
-	if records is None:
-		sample = Path(__file__).resolve().parent / 'workspace' / 'telemetry.json'
-		if sample.exists():
-			try:
-				with open(sample, 'r', encoding='utf-8') as f:
-					records = json.load(f)
-			except Exception:
-				records = None
-		if not records:
-			records = [
-				{'region': 'emea', 'latency_ms': 120, 'uptime': 0.999},
-				{'region': 'emea', 'latency_ms': 200, 'uptime': 0.995},
-				{'region': 'emea', 'latency_ms': 95, 'uptime': 0.9999},
-				{'region': 'amer', 'latency_ms': 150, 'uptime': 0.9995},
-				{'region': 'amer', 'latency_ms': 180, 'uptime': 0.998},
-				{'region': 'amer', 'latency_ms': 300, 'uptime': 0.99},
-			]
-			logger.info(f"Using embedded sample records (count={len(records)})")
+    metrics = compute_metrics(records, float(threshold_ms))
+    result = {r: metrics.get(r, {"avg_latency": None, "p95_latency": None, "avg_uptime": None, "breaches": 0}) for r in regions}
+    return {"regions": result}
 
-	if not regions or threshold_ms is None:
-		raise HTTPException(status_code=400, detail='Missing required fields: regions and threshold_ms')
-
-	metrics = compute_metrics(records, float(threshold_ms))
-	result = {}
-	for region in regions:
-		if region in metrics:
-			result[region] = metrics[region]
-		else:
-			result[region] = {'avg_latency': None, 'p95_latency': None, 'avg_uptime': None, 'breaches': 0}
-
-	response = {"regions": result}
-	logger.info(f"Responding with regions payload keys={list(result.keys())}")
-	return response
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
