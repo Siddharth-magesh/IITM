@@ -28,11 +28,17 @@ def compute_metrics(records: List[Dict[str, Any]], threshold_ms: float) -> Dict[
         lat = r.get("latency_ms", r.get("latency"))
         if lat is None:
             continue
+        # normalize uptime to a percentage value (0-100)
         if r.get("uptime") is not None:
-            up = r.get("uptime")
+            try:
+                up_raw = float(r.get("uptime"))
+            except Exception:
+                continue
+            # if uptime was given as a fraction (0-1), convert to percent
+            up = up_raw * 100.0 if up_raw <= 1.0 else up_raw
         elif r.get("uptime_pct") is not None:
             try:
-                up = float(r.get("uptime_pct")) / 100.0
+                up = float(r.get("uptime_pct"))
             except Exception:
                 continue
         else:
@@ -50,7 +56,8 @@ def compute_metrics(records: List[Dict[str, Any]], threshold_ms: float) -> Dict[
         out[reg] = {
             "avg_latency": round(float(np.mean(l)), 2),
             "p95_latency": round(float(np.percentile(l, 95)), 2),
-            "avg_uptime": round(float(np.mean(u)), 6),
+            # return avg_uptime as a percentage with three decimals (e.g. 98.173)
+            "avg_uptime": round(float(np.mean(u)), 3),
             "breaches": int((l > threshold_ms).sum()),
         }
     return out
