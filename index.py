@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
+import logging
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any
@@ -9,6 +10,10 @@ import json
 
 
 app = FastAPI()
+
+# Configure basic logging — print statements also appear in many serverless logs (Vercel)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("iitm-latency")
 
 # Allow CORS from any origin for POST requests
 app.add_middleware(
@@ -40,6 +45,20 @@ async def add_cors_headers(request: Request, call_next):
 	response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
 	response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
 	return response
+
+
+@app.options("/latency")
+async def latency_options():
+	"""Explicitly respond to preflight OPTIONS for /latency with CORS headers.
+	Some deployments may not forward OPTIONS the same way as other methods; having
+	this explicit route guarantees the header values for that path.
+	"""
+	headers = {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+		"Access-Control-Allow-Headers": "Content-Type, Authorization",
+	}
+	return Response(status_code=200, headers=headers)
 
 
 
@@ -81,6 +100,8 @@ def compute_metrics(records: List[Dict[str, Any]], threshold_ms: float):
 			'avg_uptime': round(avg_uptime, 6),
 			'breaches': breaches,
 		}
+		# Debug: log computed metrics per-region
+		logger.info(f"Computed for region={region}: avg_latency={out[region]['avg_latency']} p95={out[region]['p95_latency']} avg_uptime={out[region]['avg_uptime']} breaches={out[region]['breaches']}")
 	return out
 
 
@@ -88,6 +109,11 @@ def compute_metrics(records: List[Dict[str, Any]], threshold_ms: float):
 async def latency_endpoint(q: Query, request: Request):
 	# Determine records: prefer inline records in request body; else, try to find sample in repo root workspace
 	records = q.records
+	# Debug prints/logs to show incoming request data in deployment logs
+	print("[latency_endpoint] Received request:")
+	print("  regions:", q.regions)
+	print("  threshold_ms:", q.threshold_ms)
+	print("  records_included_in_request:", bool(q.records))
 	if records is None:
 		# Try to load a sample telemetry bundle from repo workspace/telemetry.json
 		sample = Path(__file__).resolve().parent / 'workspace' / 'telemetry.json'
@@ -108,6 +134,16 @@ async def latency_endpoint(q: Query, request: Request):
 				{'region': 'amer', 'latency_ms': 180, 'uptime': 0.998},
 				{'region': 'amer', 'latency_ms': 300, 'uptime': 0.99},
 			]
+			print(f"[latency_endpoint] No records provided; using embedded sample records (count={len(records)})")
+
+	# Log the number of records and a short sample
+	try:
+		print(f"[latency_endpoint] Using records count={len(records)}")
+		# print first 5 records to avoid gigantic logs
+		preview = records[:5]
+		print(f"[latency_endpoint] Records preview: {preview}")
+	except Exception as e:
+		print("[latency_endpoint] Could not print records preview:", e)
 
 	metrics = compute_metrics(records, q.threshold_ms)
 
