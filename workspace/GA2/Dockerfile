@@ -18,8 +18,8 @@ RUN apt-get update \
     && apt-get purge -y --auto-remove gcc build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Switch to non-root user
-USER appuser
+# Switch to non-root user (use numeric UID 1000 so validators detect it)
+USER 1000
 
 ENV APP_PORT=7167
 EXPOSE 7167
