@@ -12,7 +12,7 @@
       ]
     }
   },
-  "postCreateCommand": "python -m pip install --upgrade pip && pip install fastapi",
+  "postCreateCommand": "uv pip install fastapi",
   "forwardPorts": [7167],
   "remoteUser": "vscode"
 }
