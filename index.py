@@ -1,76 +1,20 @@
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import Response
-import logging
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Dict, Any
+from flask import Flask, request, jsonify, make_response
+from flask_cors import CORS
 import numpy as np
 from pathlib import Path
 import json
+import logging
+from typing import List, Dict, Any
 
 
-app = FastAPI()
+app = Flask(__name__)
+CORS(app, resources={r"/latency": {"origins": "*"}})
 
-# Configure basic logging — print statements also appear in many serverless logs (Vercel)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("iitm-latency")
 
-# Allow CORS from any origin for POST requests
-app.add_middleware(
-	CORSMiddleware,
-	allow_origins=["*"],
-	allow_methods=["POST", "OPTIONS"],
-	allow_headers=["*"],
-)
-
-
-# Ensure the Access-Control-Allow-* headers are present on every response. Some
-# deployment environments (or intermediate proxies) may strip or alter CORS
-# responses; adding them explicitly on every response guarantees the header is
-# present for both simple requests and preflight (OPTIONS) requests.
-@app.middleware("http")
-async def add_cors_headers(request: Request, call_next):
-	# If the incoming request is an OPTIONS preflight, quickly return the headers
-	if request.method == "OPTIONS":
-		headers = {
-			"Access-Control-Allow-Origin": "*",
-			"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-			"Access-Control-Allow-Headers": "Content-Type, Authorization",
-		}
-		return Response(status_code=200, headers=headers)
-
-	response = await call_next(request)
-	response.headers["Access-Control-Allow-Origin"] = "*"
-	# Also expose allowed methods and headers to be explicit
-	response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-	response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-	return response
-
-
-@app.options("/latency")
-async def latency_options():
-	"""Explicitly respond to preflight OPTIONS for /latency with CORS headers.
-	Some deployments may not forward OPTIONS the same way as other methods; having
-	this explicit route guarantees the header values for that path.
-	"""
-	headers = {
-		"Access-Control-Allow-Origin": "*",
-		"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-		"Access-Control-Allow-Headers": "Content-Type, Authorization",
-	}
-	return Response(status_code=200, headers=headers)
-
-
-
-class Query(BaseModel):
-	regions: List[str]
-	threshold_ms: float
-	# Optional: telemetry records can be provided inline
-	records: List[Dict[str, Any]] = None
-
 
 def compute_metrics(records: List[Dict[str, Any]], threshold_ms: float):
-	# records: list of {region: str, latency_ms: float, uptime: float}
 	by_region = {}
 	for r in records:
 		region = r.get('region')
@@ -100,22 +44,35 @@ def compute_metrics(records: List[Dict[str, Any]], threshold_ms: float):
 			'avg_uptime': round(avg_uptime, 6),
 			'breaches': breaches,
 		}
-		# Debug: log computed metrics per-region
 		logger.info(f"Computed for region={region}: avg_latency={out[region]['avg_latency']} p95={out[region]['p95_latency']} avg_uptime={out[region]['avg_uptime']} breaches={out[region]['breaches']}")
 	return out
 
 
-@app.post("/latency")
-async def latency_endpoint(q: Query, request: Request):
-	# Determine records: prefer inline records in request body; else, try to find sample in repo root workspace
-	records = q.records
-	# Debug prints/logs to show incoming request data in deployment logs
-	print("[latency_endpoint] Received request:")
-	print("  regions:", q.regions)
-	print("  threshold_ms:", q.threshold_ms)
-	print("  records_included_in_request:", bool(q.records))
+@app.route('/', methods=['GET'])
+def read_root():
+	return jsonify({'message': 'Hello, World!'})
+
+
+@app.route('/latency', methods=['POST', 'OPTIONS'])
+def latency_endpoint():
+	if request.method == 'OPTIONS':
+		resp = make_response('', 200)
+		resp.headers['Access-Control-Allow-Origin'] = '*'
+		resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+		resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+		return resp
+
+	data = request.get_json(silent=True) or {}
+	regions = data.get('regions')
+	threshold_ms = data.get('threshold_ms')
+	records = data.get('records')
+
+	print('[latency_endpoint] Received request:')
+	print('  regions:', regions)
+	print('  threshold_ms:', threshold_ms)
+	print('  records_included_in_request:', bool(records))
+
 	if records is None:
-		# Try to load a sample telemetry bundle from repo workspace/telemetry.json
 		sample = Path(__file__).resolve().parent / 'workspace' / 'telemetry.json'
 		if sample.exists():
 			try:
@@ -123,8 +80,6 @@ async def latency_endpoint(q: Query, request: Request):
 					records = json.load(f)
 			except Exception:
 				records = None
-		# If still no records, fall back to a small embedded default dataset so the endpoint
-		# responds (useful for serverless deployments where no bundle is present).
 		if not records:
 			records = [
 				{'region': 'emea', 'latency_ms': 120, 'uptime': 0.999},
@@ -136,34 +91,29 @@ async def latency_endpoint(q: Query, request: Request):
 			]
 			print(f"[latency_endpoint] No records provided; using embedded sample records (count={len(records)})")
 
-	# Log the number of records and a short sample
 	try:
 		print(f"[latency_endpoint] Using records count={len(records)}")
-		# print first 5 records to avoid gigantic logs
 		preview = records[:5]
 		print(f"[latency_endpoint] Records preview: {preview}")
 	except Exception as e:
-		print("[latency_endpoint] Could not print records preview:", e)
+		print('[latency_endpoint] Could not print records preview:', e)
 
-	metrics = compute_metrics(records, q.threshold_ms)
+	if not regions or threshold_ms is None:
+		return jsonify({'error': 'Missing required fields: regions and threshold_ms'}), 400
 
-	# Ensure requested regions are present in response (if a region had no data, return nulls/0)
+	metrics = compute_metrics(records, float(threshold_ms))
 	result = {}
-	for region in q.regions:
+	for region in regions:
 		if region in metrics:
 			result[region] = metrics[region]
 		else:
-			result[region] = {
-				'avg_latency': None,
-				'p95_latency': None,
-				'avg_uptime': None,
-				'breaches': 0,
-			}
+			result[region] = {'avg_latency': None, 'p95_latency': None, 'avg_uptime': None, 'breaches': 0}
 
-	return result
+	resp = jsonify(result)
+	resp.headers['Access-Control-Allow-Origin'] = '*'
+	return resp
 
 
-@app.get("/")
-def read_root():
-	return {"message": "Hello, World!"}
+if __name__ == '__main__':
+	app.run(host='0.0.0.0', port=8000, debug=True)
 
