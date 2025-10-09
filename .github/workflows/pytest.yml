@@ -1,25 +1,24 @@
-name: pytest
+name: Pytest
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+on: [push, pull_request]
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pytest
-      - name: Run all tests
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Test with pytest
         run: |
-          # Run pytest on the tests folder, stop after first failure, hide warnings
-          pytest tests --maxfail=1 --disable-warnings -q
+          python -m pytest
