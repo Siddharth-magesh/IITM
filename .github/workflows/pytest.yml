@@ -19,6 +19,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest
-      - name: Run tests
+      - name: Run all tests
         run: |
-          pytest -q
+          # Run pytest on the tests folder, stop after first failure, hide warnings
+          pytest tests --maxfail=1 --disable-warnings -q
