@@ -1,0 +1,52 @@
+[
+    {
+        "question": "What is known as the powerhouse of the cell?",
+        "options": [
+            "Nucleus",
+            "Mitochondria",
+            "Ribosome",
+            "Endoplasmic Reticulum"
+        ],
+        "correctAnswer": 1
+    },
+    {
+        "question": "Which organelle is responsible for photosynthesis?",
+        "options": [
+            "Chloroplast",
+            "Mitochondria",
+            "Golgi Apparatus",
+            "Lysosome"
+        ],
+        "correctAnswer": 0
+    },
+    {
+        "question": "What structure controls the movement of substances in and out of the cell?",
+        "options": [
+            "Cell Wall",
+            "Cell Membrane",
+            "Cytoplasm",
+            "Nucleus"
+        ],
+        "correctAnswer": 1
+    },
+    {
+        "question": "Which part of the cell is responsible for protein synthesis?",
+        "options": [
+            "Ribosome",
+            "Mitochondria",
+            "Nucleus",
+            "Lysosome"
+        ],
+        "correctAnswer": 0
+    },
+    {
+        "question": "What is the jelly-like substance inside the cell called?",
+        "options": [
+            "Cytoplasm",
+            "Nucleoplasm",
+            "Protoplasm",
+            "Stroma"
+        ],
+        "correctAnswer": 0
+    }
+]
