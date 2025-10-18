@@ -1,0 +1,7 @@
+{
+  "model": "text-embedding-3-small",
+  "input": [
+    "Dear user, please verify your transaction code 56294 sent to 22f3002579@ds.study.iitm.ac.in",
+    "Dear user, please verify your transaction code 24301 sent to 22f3002579@ds.study.iitm.ac.in"
+  ]
+}
