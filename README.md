@@ -6,6 +6,10 @@ description: deployment-ready-ga2-25c816
 
 # Deployment observability API (Docker-based)
 
+This project provides a Dockerized FastAPI application that exposes an observability endpoint. The main purpose is to calculate and return per-region latency metrics.
+
+Verification number: 41733674
+
 This Space runs a Dockerized FastAPI app (uvicorn) that exposes the observability endpoint.
 
 Endpoints
