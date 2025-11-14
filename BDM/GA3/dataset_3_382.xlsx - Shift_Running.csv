@@ -1,0 +1,15 @@
+Date,Shift 1 (8 Hours),Shift 2 (8 Hours),Shift 3 (8 Hours)
+2022-04-01 0:00:00,Operational,Operational,Operational
+2022-04-02 0:00:00,Unplanned Maintenance,Operational,Operational
+2022-04-03 0:00:00,Operational,Operational,Operational
+2022-04-04 0:00:00,Operational,Operational,Operational
+2022-04-05 0:00:00,Operational,Operational,Operational
+2022-04-06 0:00:00,Operational,Operational,Operational
+2022-04-07 0:00:00,Operational,Operational,Breakdown
+2022-04-08 0:00:00,Operational,Operational,Operational
+2022-04-09 0:00:00,Operational,Operational,Operational
+2022-04-10 0:00:00,Operational,Operational,Operational
+2022-04-11 0:00:00,Operational,Planned Maintenance,Operational
+2022-04-12 0:00:00,Operational,Operational,Operational
+2022-04-13 0:00:00,Operational,Operational,Operational
+2022-04-14 0:00:00,Power Cut,Power Cut,Power Cut
